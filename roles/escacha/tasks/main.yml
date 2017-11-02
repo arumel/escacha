@@ -1,0 +1,17 @@
+---
+- name: Escacha path
+  file:
+    path: "{{ escacha_work }}"
+    state: directory
+    owner: root
+    group: root
+    mode: 0700
+
+- name: Escacha deployment
+  template:
+    src: arumel_escacha_gi.sh.j2
+    dest: "{{ escacha_work }}/escacha.sh"
+    owner: root
+    group: root
+    mode: 0700
+...

@@ -1,0 +1,223 @@
+#!/bin/bash
+
+# 27/10/2017 - v1.0 - alberto.pereiro@arumel.com
+# -- -------------
+# -- Configuracion
+# -- -------------
+
+# -- Identificacion de discos por str en /dev/by-path e por ID, neste caso SCSI
+MODOTEST={{ escacha_modotest }}	# - 1=Modo de probas. 0=Execucion real
+STORAGESPLIT={{ escacha_storagesplit }}			# - 1=Facemos split de almacenamento. 0=non facemos split de almacenamento
+NETWORKSPLIT={{ escacha_networksplit }}			# - 1=Facemos split de rede. 0=non facemos split de rede
+ONLINEDISKS={{ escacha_online_disks }}			# - 1=Ponhemos discos online nos DGS cando recuperedos do split
+STRSCSI={{ escacha_strscsi }}			# - Cadea pola que buscar dispositivos en /disk/by-path
+CABINASITE1={{ escacha_cabinasite1 }}	# - Identificacion de LUNs da cabina no site1 en /disk/by-path
+CABINASITE2={{ escacha_cabinasite2 }}     # - Identificacion de LUNs da cabina no site2 en /disk/by-path
+
+DELAY={{ escacha_delay }}			# -- Segundos entre inicio da proba e posta OFFLINE de discos
+CRSRESTART={{ escacha_crsrestart }}			# -- Reinicio de clusterware no nodo local tras a proba
+ARUMON={{ escacha_arumon }}	# -- Ferramenta de monitorizacion de cluester para tracear o comportamento
+
+NODOSSITE1="{{ escacha_nodossite1 }}"	# -- Lista de hostnames dos nodos no site1
+NODOSSITE2="{{ escacha_nodossite2 }}"	# -- Lista de hostnames dos nodos no site2
+NODOLOCAL=`hostname -s`		# -- Hostname do servidor no que lanzamos este script
+REDES="{{ escacha_redes }}"		# -- Lista de redes privadas nas que forzar o split
+if [[ $NODOSSITE1 == *${NODOLOCAL}* ]]; then SITELOCAL=1; SITEREMOTO=2; else SITELOCAL=2; SITEREMOTO=1; fi
+REBALANCEPOWER={{ escacha_rebalancepower }}		# -- Valor de rebalanceo para as operaciones de onlie de discos
+
+# -- Configuracion de cores para mensaxes en terminal
+RED='\033[0;31m'
+BLUE='\033[1;34m'
+NC='\033[0m'
+
+# ----------------------------------------------------------------------------------------------------------------------------
+function startmon {
+
+# -- Precisa ter instalada a ferramenta arumon na ruta especificada en $ARUMON
+# -- Inicia arumon para monitorizar varios componhentes de cluster e BD no cluster
+
+   cd ${ARUMON}
+   ${ARUMON}/arumon_control.sh
+
+   ocrcheck
+   crsctl query css votedisk
+   crsctl query cluster site -all
+
+   if [[ $? == 0 ]] && [[ ${MODOTEST} == 0 ]]
+   then
+       printf "${NC}INFO: Arrancada monitorizacion. Esperando ${DELAY} segundos para comenzar el split\n"
+       sleep ${DELAY}
+   elif [[ $? == 0 ]]
+   then
+       echo "ERROR: Error arrancando la monitorizacion. Se aborta el split"
+       exit 1
+   fi
+}
+
+# ----------------------------------------------------------------------------------------------------------------------------
+function stopmon {
+
+# -- Elimina os ficheiros que manteñen os procesos arumon en background funcionando para para a monitorizacion
+
+    cd ${ARUMON}
+    rm -f ${ARUMON}/*activo
+}
+
+# ----------------------------------------------------------------------------------------------------------------------------
+function restartcrs {
+
+# -- Reinicio de clusterware en nodo local se non estamos en modo test
+
+  if [[ ${CRSRESTART} == 1 ]]
+  then
+      crsctl stop crs -f
+      crsctl start crs
+  elif [[ ${MODOTEST} == 1 ]]
+  then
+      printf "${BLUE}TEST: crsctl stop crs -f\n"
+      printf "${BLUE}TEST: crsctl start crs\n"
+  fi
+}
+
+# ----------------------------------------------------------------------------------------------------------------------------
+function startstoragesplit {
+
+# -- Posta en offline no nodo dos discos da cabina $CABINASPLIT
+
+   if [[ $SITE == 1 ]]; then CABINASPLIT=${CABINASITE1}; else CABINASPLIT=${CABINASITE2}; fi
+
+   printf "${RED}WARN: Se perdera la visibilidad de discos en ${CABINASPLIT} en el site ${SITEREMOTO}  \n\n"
+
+   for DISCOMP in `ls -1 /dev/disk/by-id/${STRSCSI}${CABINASPLIT}* | awk -F/ {' print $5 '} | sed -e 's/scsi-//'`
+   do
+     for DISCOSD in `multipath -l ${DISCOMP} | grep sd | awk {' print $3 '}`
+     do
+       if [[ ${MODOTEST} == 0 ]]
+       then
+           printf "${RED}WARN: `date` - Deshabilitando ${DISCOSD}\n"
+           echo 'offline' > /sys/block/${DISCOSD}/device/state
+       else
+           printf "${BLUE}TEST: echo 'offline' > /sys/block/${DISCOSD}/device/state\n"
+       fi
+     done
+   done
+}
+
+# ----------------------------------------------------------------------------------------------------------------------------
+function stopstoragesplit {
+
+    if [[ $SITE == 1 ]]; then CABINASPLIT=${CABINASITE1}; else CABINASPLIT=${CABINASITE2}; fi
+
+    echo "INFO: Recuperando visibilidad de discos en ${CABINASPLIT} en el site ${SITEREMOTO}"
+
+    for DISCOMP in `ls -1 /dev/disk/by-id/${STRSCSI}${CABINASPLIT}* | awk -F/ {' print $5 '} | sed -e 's/scsi-//'`
+    do
+      for DISCOSD in `multipath -l ${DISCOMP} | grep sd | awk {' print $3 '}`
+      do
+        if [[ ${MODOTEST} == 1 ]]
+        then        
+            printf "${BLUE}TEST: `date` - Habilitando disco ${DISCOSD}\n"
+            printf "${BLUE}TEST: Habilitando /sys/block/${DISCOSD}/device/state\n"
+        else
+            printf "${NC}INFO: `date` - Habilitando disco ${DISCOSD}\n"
+            echo "running" > /sys/block/${DISCOSD}/device/state
+        fi
+      done
+    done
+}
+
+# ----------------------------------------------------------------------------------------------------------------------------
+function startnetworksplit {
+
+# -- Determinadmos o site contra o que cortar a comunicacion
+  if [[ $SITELOCAL == 1 ]]; then NODOSREMOTOS=${NODOSSITE2}; else NODOSREMOTOS=${NODOSSITE1}; fi
+
+# -- Aplicamos o corte en modo real ou en modo test
+  if [[ ${NETWORKSPLIT} == 1 ]]
+  then
+      for NODO in ${NODOSREMOTOS}
+      do
+        for REDE in ${REDES}
+        do
+          if [[ ${MODOTEST} == 1 ]]
+          then
+              printf "${BLUE}TEST: iptables -I OUTPUT 1 -d ${NODO}-${REDE} -j DROP\n"
+              printf "${BLUE}TEST: iptables -I INPUT 1 -s ${NODO}-${REDE} -j DROP\n"
+          else
+              printf "${RED}WARN: Se perdera la visibilidad de red con el site ${SITEREMOTO}\n\n"
+   	      iptables -I OUTPUT 1 -d ${NODO}-${REDE} -j DROP
+              iptables -I INPUT 1 -s ${NODO}-${REDE} -j DROP
+          fi
+        done
+      done
+  fi
+}
+
+# ----------------------------------------------------------------------------------------------------------------------------
+function stopnetworksplit {
+
+  if [[ ${NETWORKSPLIT} == 1 ]]
+  then
+      if [[ ${MOTOTEST} == 1 ]]
+      then
+          printf "${BLUE}TEST: iptables -F\n"
+      else
+          iptables -F
+      fi
+  fi
+}
+
+# ----------------------------------------------------------------------------------------------------------------------------
+function getdgs {
+
+  LISTADGS=`for i in \`asmcmd ls\` ; do echo ${i::-1}; done`
+
+}
+
+# ----------------------------------------------------------------------------------------------------------------------------
+function onlinedgdisks {
+
+  if [[ ${ONLINEDISKS} == 1 ]]
+  then
+    getdgs
+
+    for DG in ${LISTADGS}
+    do
+        if [[ ${MODOTEST} == 1 ]]
+        then
+            printf "${BLUE}TEST: asmcmd online -G ${DG} -a --power ${REBALANCEPOWER}\nasmcmd rebal --power ${REBALANCEPOWER} ${DG}\n\n"
+        else
+            printf "${NC}INFO: Poñendo online discos en diskgroup ${DG}\n"
+            asmcmd online -G ${DG} -a --power ${REBALANCEPOWER}
+            asmcmd rebal --power ${REBALANCEPOWER} ${DG}
+        fi
+    done
+  
+    printf "INFO: Lista de operacions ASM\n"
+    asmcmd lsop 
+    printf "\nINFO: LIata de discos ASM\n"
+    asmcmd lsdsk -kp
+  fi
+}
+
+# ----------------------------------------------------------------------------------------------------------------------------
+case "$1" in
+'start')
+	startmon
+	startstoragesplit
+	startnetworksplit
+        printf "${NC}"
+	;;
+'stop')
+	stopstoragesplit
+	stopnetworksplit
+	stopmon
+	restartcrs
+        sleep 120
+        onlinedgdisks
+        printf "${NC}"
+	;;
+'*')
+    echo "ERRO: sintaxe ./simula_split.sh [ start | stop ]"
+    ;;
+esac

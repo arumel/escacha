@@ -1,0 +1,18 @@
+---
+arumon_work: /u01/sfw/arumon
+escacha_work: /u01/sfw/escacha
+escacha_modotest: 1
+escacha_storagesplit: 1
+escacha_networksplit: 1
+escacha_online_disks: 1
+escacha_strscsi: scsi-
+escacha_cabinasite1: 36000d31001324e
+escacha_cabinasite2: 36000d310013cf0
+escacha_arumon: "{{ arumon_work }}"
+escacha_nodossite1: "ctbl109 ctbl209"
+escacha_nodossite2: csbl109
+escacha_redes: "priv1 priv2"
+escacha_rebalancepower: 1024
+escacha_delay: 10
+escacha_crsrestart: 0
+...

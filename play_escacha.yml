@@ -1,0 +1,9 @@
+---
+- import_playbook: ../arumon/play_arumon.yml
+
+- hosts: all
+  gather_facts: no
+  tasks:
+    - include_role:
+        name: escacha
+...
