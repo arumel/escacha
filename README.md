@@ -27,12 +27,12 @@ It is recommended to use a playbook where arumon is also deployed. Currently aru
 
 Exemplo para despregar a ferramenta no cluster de producion de tauli.
 
-1. Configurar variables en **group_vars/grupo/grupo_escacha.yml**. Por exemplo, para tauli produción, group_vars/tauli-ora-pro/tauli-ora-pro-escacha.yml
+1. Configurar variables en **group_vars/grupo/grupo_escacha.yml**. Por exemplo, para tauli produción, **group_vars/tauli-ora-pro/tauli-ora-pro-escacha.yml**
 1. Despregar con Ansible a aplicacion nos servidores do grupo correspondente. De novo para tauli produción:
-ansible-playbook --limit tauli-ora-pro play_escacha.yml
+**ansible-playbook --limit tauli-ora-pro play_escacha.yml**
 1. Lanzar escacha para simular un split en modo real ou en modo test segundo a configuracion que teñamos aplicado.
-ansible-playbook --limit tauli-ora-pro play_startescacha.yml
+**ansible-playbook --limit tauli-ora-pro play_startescacha.yml**
 1. Parar escacha e, en funcion da configuracion, recuperar a normalidade no clúster.
-ansible-playbook --limit tauli-ora-pro play_stopescacha.yml
+**ansible-playbook --limit tauli-ora-pro play_stopescacha.yml**
 
 O playbook **playescacha.yml** desprega tamen a ferramenta arumon. En caso de non querer despregarse (non saberia o motivo polo que facelo), debemos comentar a correspondente entrada no playbook ou crear un playbook novo.
