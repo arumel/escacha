@@ -5,6 +5,8 @@
 # -- Configuracion
 # -- -------------
 
+#exec > {{ escacha_log }} 2>&1
+
 # -- Identificacion de discos por str en /dev/by-path e por ID, neste caso SCSI
 MODOTEST={{ escacha_modotest }}	# - 1=Modo de probas. 0=Execucion real
 STORAGESPLIT={{ escacha_storagesplit }}			# - 1=Facemos split de almacenamento. 0=non facemos split de almacenamento
@@ -31,6 +33,15 @@ BLUE='\033[1;34m'
 NC='\033[0m'
 
 # ----------------------------------------------------------------------------------------------------------------------------
+function envasm {
+
+  export ORAENV_ASK=NO
+  export ORACLE_SID=`grep '^+ASM' /etc/oratab | awk -F: '{ print $1 }'`
+  export ORACLE_HOME=`grep '^+ASM' /etc/oratab | awk -F: '{ print $2 }'`
+  export PATH=$ORACLE_HOME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/root/bin
+}
+
+# ----------------------------------------------------------------------------------------------------------------------------
 function startmon {
 
 # -- Precisa ter instalada a ferramenta arumon na ruta especificada en $ARUMON
@@ -39,11 +50,11 @@ function startmon {
    cd ${ARUMON}
    ${ARUMON}/arumon_control.sh
 
-   ocrcheck
-   crsctl query css votedisk
-   crsctl query cluster site -all
+   ${ORACLE_HOME}/bin/ocrcheck
+   ${ORACLE_HOME}/bin/crsctl query css votedisk
+   ${ORACLE_HOME}/bin/crsctl query cluster site -all
 
-   if [[ $? == 0 ]] && [[ ${MODOTEST} == 0 ]]
+   if [[ ${MODOTEST} == 0 ]]
    then
        printf "${NC}INFO: Arrancada monitorizacion. Esperando ${DELAY} segundos para comenzar el split\n"
        sleep ${DELAY}
@@ -70,8 +81,8 @@ function restartcrs {
 
   if [[ ${CRSRESTART} == 1 ]]
   then
-      crsctl stop crs -f
-      crsctl start crs
+      ${ORACLE_HOME}/bin/crsctl stop crs -f
+      ${ORACLE_HOME}/bin/crsctl start crs
   elif [[ ${MODOTEST} == 1 ]]
   then
       printf "${BLUE}TEST: crsctl stop crs -f\n"
@@ -170,7 +181,7 @@ function stopnetworksplit {
 # ----------------------------------------------------------------------------------------------------------------------------
 function getdgs {
 
-  LISTADGS=`for i in \`asmcmd ls\` ; do echo ${i::-1}; done`
+  LISTADGS=`for i in \`${ORACLE_HOME}/bin/asmcmd ls\` ; do echo ${i::-1}; done`
 
 }
 
@@ -188,27 +199,29 @@ function onlinedgdisks {
             printf "${BLUE}TEST: asmcmd online -G ${DG} -a --power ${REBALANCEPOWER}\nasmcmd rebal --power ${REBALANCEPOWER} ${DG}\n\n"
         else
             printf "${NC}INFO: Poñendo online discos en diskgroup ${DG}\n"
-            asmcmd online -G ${DG} -a --power ${REBALANCEPOWER}
-            asmcmd rebal --power ${REBALANCEPOWER} ${DG}
+            ${ORACLE_HOME}/bin/asmcmd online -G ${DG} -a --power ${REBALANCEPOWER}
+            ${ORACLE_HOME}/bin/asmcmd rebal --power ${REBALANCEPOWER} ${DG}
         fi
     done
   
     printf "INFO: Lista de operacions ASM\n"
-    asmcmd lsop 
+    ${ORACLE_HOME}/bin/asmcmd lsop 
     printf "\nINFO: LIata de discos ASM\n"
-    asmcmd lsdsk -kp
+    ${ORACLE_HOME}/bin/asmcmd lsdsk -kp
   fi
 }
 
 # ----------------------------------------------------------------------------------------------------------------------------
 case "$1" in
 'start')
+	envasm
 	startmon
 	startstoragesplit
 	startnetworksplit
         printf "${NC}"
 	;;
 'stop')
+	envasm
 	stopstoragesplit
 	stopnetworksplit
 	stopmon

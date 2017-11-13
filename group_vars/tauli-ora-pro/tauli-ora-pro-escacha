@@ -1,7 +1,8 @@
 ---
 arumon_work: /u01/sfw/arumon
 escacha_work: /u01/sfw/escacha
-escacha_modotest: 1
+escacha_log: "{{ escacha_work }}/escacha.log"
+escacha_modotest: 0
 escacha_storagesplit: 1
 escacha_networksplit: 1
 escacha_online_disks: 1
@@ -13,6 +14,6 @@ escacha_nodossite1: "ctbl109 ctbl209"
 escacha_nodossite2: csbl109
 escacha_redes: "priv1 priv2"
 escacha_rebalancepower: 1024
-escacha_delay: 10
+escacha_delay: 30
 escacha_crsrestart: 0
 ...
